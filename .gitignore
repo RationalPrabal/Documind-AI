@@ -1,0 +1,30 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Secrets: never commit real configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Your own documents: test PDFs are generated in memory, so no PDF belongs in the repo
+*.pdf
+
+# curl cookie jar created by the README's manual-test commands (contains your signed identity cookie)
+jar
+*.jar
+cookies.txt
+
+# Logs, OS and editor files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.tmp.*
