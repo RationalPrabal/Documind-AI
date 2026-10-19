@@ -52,7 +52,16 @@ const EnvSchema = z
     HISTORY_MAX_CHARS: int(6000),
 
     // Abuse + cost protection (Phase 5)
-    TRUST_PROXY: z.preprocess((v) => v === 'true' || v === '1', z.boolean()).default(false),
+    // How many reverse proxies sit in front of the app (0 = none, e.g. local
+    // dev). Express then takes the client IP from X-Forwarded-For that many
+    // hops back, so rate limits see real visitors, not the proxy.
+    TRUST_PROXY: z.preprocess(
+      (v) => (v === 'false' || v === '' ? 0 : v === 'true' ? 1 : v),
+      z.coerce.number().int().min(0).max(10),
+    ).default(0),
+    // Optional shared code visitors must enter before using the app, so a
+    // public deployment can't be used to spend your OpenAI credit. Empty = open.
+    ACCESS_CODE: z.string().default(''),
     UPLOADS_PER_HOUR: int(20),
     QUESTIONS_PER_10_MIN: int(60),
     DAILY_CHAT_TOKEN_BUDGET: int(500_000),

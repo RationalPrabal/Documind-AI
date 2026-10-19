@@ -205,3 +205,17 @@ code { font-size: 0.9em; background: var(--border); padding: 1px 5px; border-rad
 .composer__side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 6px; }
 .counter { font-size: 11.5px; color: var(--muted); }
 .counter--over { color: var(--err); font-weight: 600; }
+
+/* ---- access gate ----------------------------------------------------- */
+.gate { min-height: 100dvh; display: grid; place-items: center; padding: 16px; }
+.gate__card {
+  width: min(380px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 24px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.gate__card .brand { padding: 0; }
+.gate__card p { margin: 0; font-size: 14px; }
+.gate__card input {
+  font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+}
+.gate__card input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }

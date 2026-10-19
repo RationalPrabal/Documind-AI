@@ -31,7 +31,7 @@ export default function UploadBox({ maxUploadMb, onUploaded, onError }) {
       })
       onUploaded(result)
     } catch (err) {
-      if (err.name !== 'AbortError') onError(err.message)
+      if (err.name !== 'AbortError') onError(err.message, err.status)
     } finally {
       controllerRef.current = null
       setPhase('idle')

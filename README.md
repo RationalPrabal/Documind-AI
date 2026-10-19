@@ -82,7 +82,7 @@ While you do this, watch terminal 1: every request is logged with timings, score
 
 | Command | Needs | What it checks | Cost |
 |---|---|---|---|
-| `cd server && npm test` | nothing | 37 tests: chunker, PDF parsing, prompt and citation logic, and the HTTP layer (security headers, signed cookie, forged cookie, validation, CSRF, upload limits, rate limiting, no error leakage) | free |
+| `cd server && npm test` | nothing | 43 tests: chunker, PDF parsing, prompt and citation logic, the HTTP layer (security headers, signed cookie, forged cookie, validation, CSRF, upload limits, rate limiting, no error leakage), and the access-code gate | free |
 | `npm run smoke` | server running | 20 end-to-end checks: upload, dedup, access control between two users, answers and citations, both refusal paths, prompt injection, follow-ups and memory, cancellation, cleanup | < $0.01 |
 | `npm run eval` | server running | 26 labelled questions (including follow-ups) → retrieval recall, answer accuracy, citation accuracy, refusal accuracy, latency, tokens. Exits non-zero below the quality bar | ~ $0.01 |
 | `cd client && npm run lint && npm run build` | nothing | Lint + production build | free |
@@ -137,6 +137,35 @@ Every setting is documented in [server/.env.example](server/.env.example): model
 top-K, score threshold, context and output token caps, upload limits, rate limits, and daily token budgets.
 
 ---
+
+## Deploy to Render (CI/CD)
+
+**How it works:** every push to `main` runs **GitHub Actions CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+server tests and dependency audit, client lint and build, and a packaged backend artifact. **Render** ([`render.yaml`](render.yaml))
+deploys a commit **only after those checks pass**. A red build never reaches users.
+
+```
+git push main ──► GitHub Actions: test · audit · lint · build · package ──✓──► Render: build → health check → live
+                                                                        ──✗──► nothing deployed
+```
+
+**One-time setup:**
+1. **OpenAI:** create an API key and set a **monthly usage limit** in the OpenAI dashboard.
+2. **MongoDB Atlas:**
+   - *Database Access*: create a dedicated user with a long random password and `readWrite` on the `documind` database only.
+   - *Network Access*: allow Render to connect. Free Render services don't have a fixed IP, so this usually means `0.0.0.0/0`. The database is then protected by that user's credentials, which is why they must be strong and dedicated.
+   - The indexes already exist if you ran `npm run setup:indexes` against the same cluster.
+3. **Render:** sign in with GitHub → **New → Blueprint** → pick this repo. Render reads `render.yaml` and asks for the three secrets:
+   - `MONGODB_URI`: the connection string for the dedicated user.
+   - `OPENAI_API_KEY`.
+   - `ACCESS_CODE`: the code visitors must enter. **Always set it on a public deployment.**
+
+   `SESSION_SECRET` is generated automatically.
+4. **First deploy:** open `https://<your-service>.onrender.com`, enter the access code, and upload a PDF.
+5. **Check the proxy setting:** in Render → Logs, find a request line and compare its `"ip"` with your public IP (`curl ifconfig.me`). If they differ, change `TRUST_PROXY` in Render's environment settings (try 1, 2 or 3) until they match. Rate limits depend on it.
+
+**Every deploy after that:** just `git push`. Watch the ✓/✗ on GitHub's *Actions* tab, then the deploy in Render's dashboard.
+On the free plan, the service sleeps after about 15 minutes idle, so the first request after that takes a while to wake it.
 
 ## Security notes (read before deploying or forking)
 

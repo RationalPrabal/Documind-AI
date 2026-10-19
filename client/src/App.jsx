@@ -4,6 +4,7 @@ import { formatNumber } from './format.js'
 import UploadBox from './components/UploadBox.jsx'
 import DocumentList from './components/DocumentList.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
+import AccessGate from './components/AccessGate.jsx'
 
 const newId = () => crypto.randomUUID()
 
@@ -71,11 +72,12 @@ export default function App() {
       setDocuments(docs)
       setDocsState('ready')
       return docs
-    } catch {
+    } catch (err) {
+      if (err.status === 401) refreshMeta() // access code required: meta will show the gate
       setDocsState('error')
       return []
     }
-  }, [])
+  }, [refreshMeta])
 
   // Initial load from the backend (an external system, so an effect is right).
   // State is only set when the responses arrive, never synchronously here.
@@ -175,6 +177,7 @@ export default function App() {
     } catch (err) {
       if (err.name === 'AbortError') update({ status: 'cancelled' })
       else update({ status: 'error', error: err.message })
+      if (err.status === 401) refreshMeta()
     } finally {
       askControllerRef.current = null
       setStreamingDocId(null)
@@ -184,6 +187,17 @@ export default function App() {
 
   const selected = documents.find((d) => d.id === selectedId)
   const usage = meta?.usageToday
+
+  if (meta?.access?.required && !meta.access.granted) {
+    return (
+      <AccessGate
+        onGranted={() => {
+          refreshMeta()
+          refreshDocuments().then((docs) => setSelectedId((id) => id ?? docs.find((d) => d.status === 'ready')?.id ?? null))
+        }}
+      />
+    )
+  }
 
   return (
     <div className="app">
@@ -195,7 +209,10 @@ export default function App() {
         <UploadBox
           maxUploadMb={meta?.limits.maxUploadMb ?? 10}
           onUploaded={handleUploaded}
-          onError={(text) => setNotice({ type: 'error', text })}
+          onError={(text, status) => {
+            setNotice({ type: 'error', text })
+            if (status === 401) refreshMeta()
+          }}
         />
 
         <div className="sidebar__section">Your documents</div>

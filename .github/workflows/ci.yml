@@ -1,0 +1,84 @@
+# Continuous Integration: runs on GitHub's machines for every push to main and
+# every pull request. Render waits for these checks to pass before deploying
+# (autoDeployTrigger: checksPass in render.yaml), so a red build never ships.
+#
+# No secrets are needed: the unit and HTTP tests never reach MongoDB or
+# OpenAI. The smoke test and eval (which do, and cost money) are run by hand.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the jobs only need to read the code.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older, now-pointless run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server · test & audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc          # same Node version as local dev and Render
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci                          # exact versions from the lockfile
+      - run: npm test                        # unit + HTTP tests
+      - run: npm audit --omit=dev --audit-level=high   # fail on known high/critical vulnerabilities
+
+  client:
+    name: Client · lint & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  # Build the deployable backend artifact once everything is green: an
+  # allowlist of runtime files plus production-only node_modules, named by
+  # commit. Download it from the run's "Artifacts" section on GitHub.
+  package:
+    name: Package server artifact
+    needs: [server, client]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Assemble runtime files (allowlist)
+        run: |
+          mkdir -p build/documind-server/scripts
+          cp -r server/src server/package.json server/package-lock.json build/documind-server/
+          cp server/scripts/setupIndexes.js build/documind-server/scripts/
+          cd build/documind-server && npm ci --omit=dev
+      - uses: actions/upload-artifact@v7
+        with:
+          name: documind-server-${{ github.sha }}
+          path: build/documind-server
+          retention-days: 14
+          if-no-files-found: error

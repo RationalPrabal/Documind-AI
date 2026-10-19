@@ -129,6 +129,17 @@ vague follow-ups match nothing. The history is used for that request only and ne
 server stays stateless. It's untrusted input: validated, size-capped, and escaped. Measured: 4/4
 follow-ups correct, at a cost of about 1–1.5 s extra on follow-ups only.
 
+**How is it deployed? Walk me through your CI/CD.**
+A push to `main` triggers GitHub Actions. Three jobs run on GitHub's machines: server tests (43
+unit and HTTP tests, which need no secrets) with an `npm audit` gate, client lint and build, and
+packaging an allowlisted, production-only backend artifact. Render is configured with a Blueprint
+in the repo, using `autoDeployTrigger: checksPass`, so it deploys a commit only after all those
+checks are green. Render builds, starts the new version, and only switches traffic once
+`/api/health`, which pings the database, returns 200. One service serves both the API and the
+React build, so it's same-origin. Secrets live in Render's dashboard, and the session secret is
+generated. Because the demo is public, an access code (an HMAC cookie, with rate-limited attempts)
+plus daily token budgets protect my OpenAI bill.
+
 **How would you scale it?**
 Several API instances behind a load balancer, with the rate-limit store moved to Redis. Ingestion
 moves to a queue with workers. Embedding calls get concurrency limits. Answers to frequent

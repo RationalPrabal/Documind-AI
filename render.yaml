@@ -1,0 +1,44 @@
+# Render Blueprint: infrastructure as code for the deployment.
+# One web service runs Express, which serves both the API and the React build,
+# so the app has a single URL (no CORS, cookies just work).
+# Spec: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: documind
+    runtime: node
+    plan: free                  # sleeps after ~15 min idle; the first visit then takes a while to wake
+    region: singapore           # the closest Render region to the Atlas cluster in Mumbai
+    branch: main
+    autoDeployTrigger: checksPass   # deploy only after GitHub Actions CI passes on the commit
+    # Runs on Render's build machine from the repo root. --include=dev because
+    # NODE_ENV=production would otherwise skip Vite, which the build needs.
+    buildCommand: cd client && npm ci --include=dev && npm run build && cd ../server && npm ci --omit=dev
+    startCommand: cd server && node src/server.js
+    healthCheckPath: /api/health    # must return 200 before traffic switches to a new deploy
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      # Proxies in front of the app. Verify after the first deploy: the "ip"
+      # in Render's request logs must be YOUR public IP (adjust if not).
+      - key: TRUST_PROXY
+        value: "3"
+      - key: SESSION_SECRET
+        generateValue: true     # Render generates a random 256-bit secret
+      # Secrets: sync false = Render asks for them in the dashboard; never in git.
+      - key: MONGODB_URI
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false
+      # Tighter limits than local dev: this is a public demo on your API key.
+      - key: DAILY_CHAT_TOKEN_BUDGET
+        value: "100000"
+      - key: DAILY_EMBEDDING_TOKEN_BUDGET
+        value: "1000000"
+      - key: UPLOADS_PER_HOUR
+        value: "10"
+      - key: QUESTIONS_PER_10_MIN
+        value: "30"

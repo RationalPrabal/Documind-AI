@@ -240,6 +240,42 @@ Answer correctness is checked with regexes (deterministic and free). A common al
 **LLM-as-judge**: a second model grades faithfulness and relevance. It scales to open-ended answers,
 but it costs money and adds its own errors.
 
+## 6b. Deployment and CI/CD
+
+```
+developer ── git push main ──► GitHub
+                                 │ triggers
+                                 ▼
+               GitHub Actions CI (.github/workflows/ci.yml), on GitHub's machines
+                 ├─ server:  npm ci → npm test (43) → npm audit (high/critical fail the build)
+                 ├─ client:  npm ci → lint → vite build
+                 └─ package: allowlisted runtime files + prod-only node_modules → artifact (kept 14 days)
+                                 │ all checks green on the commit
+                                 ▼
+               Render (render.yaml, autoDeployTrigger: checksPass)
+                 build:  client build + server prod install
+                 start:  node src/server.js  (Express serves /api AND client/dist)
+                 health: /api/health must return 200 before traffic switches over
+                                 │
+                                 ▼
+               https://<service>.onrender.com ──► MongoDB Atlas + OpenAI
+```
+
+| Decision | Why | Alternative |
+|---|---|---|
+| **GitHub Actions** for CI | Runs on GitHub's machines, free for public repos, config lives in the repo | Jenkins: self-hosted, so you patch, secure and scale it yourself |
+| **CI needs no secrets** | Unit and HTTP tests never touch MongoDB or OpenAI; smoke and eval (real services, real cost) run by hand | Running smoke in CI with encrypted Secrets: more coverage, but costs money on every push |
+| **Render deploys only after CI passes** (`checksPass`) | One gate in one place; no deploy token needs to live in CI | CI calls a deploy hook at the end (needs a secret), or Render deploys on every commit (no gate) |
+| **One service serves UI and API** | Same origin, so no CORS and the cookies just work; one URL; one thing to deploy | Static frontend on a CDN + separate API: faster static delivery, but cross-site cookies and CORS |
+| **Blueprint (`render.yaml`) in git** | Infrastructure as code: the deployment is reviewable, versioned and reproducible | Clicking through the dashboard: quick, but undocumented and easy to drift |
+| **Health check gates the switch** | Render only routes traffic to a new deploy once `/api/health` (including a DB ping) returns 200, so a broken deploy never replaces a working one | No health check: a crashing release goes live |
+| **Secrets in Render's dashboard** (`sync: false`), `SESSION_SECRET` generated | Never in git or the image; rotate in one place | A secrets manager (AWS Secrets Manager, Doppler) at larger scale |
+| **Optional `ACCESS_CODE`** | A public URL would otherwise let anyone spend the OpenAI credit. The cookie holds an HMAC of the code, not the code itself, and attempts are rate limited | Real user accounts (planned "next step") |
+| **`TRUST_PROXY` as a hop count** | Behind Render's proxies, `req.ip` must be the real visitor or rate limits become global. Verified via the `ip` field in the request logs | `trust proxy: true` would let any client spoof its IP |
+
+**Caching:** Vite gives every asset a content hash in its filename, so `/assets/*` is served with `max-age=31536000, immutable`.
+`index.html` uses `no-cache`, so a new deploy is picked up on the next page load.
+
 ## 7. Deliberately out of scope for v1
 Reranking (a cross-encoder or Voyage rerank on the top 20), hybrid lexical plus
 vector search (`$rankFusion` with Atlas Search), multi-document questions, OCR,
@@ -254,6 +290,8 @@ DocuMind AI/
 ├── README.md                       # setup, run and test instructions
 ├── docs/ARCHITECTURE.md            # this file
 ├── docs/INTERVIEW.md               # pitch, numbers, Q&A
+├── render.yaml                     # Render Blueprint: deployment as code
+├── .github/workflows/ci.yml        # CI: test, audit, lint, build, package
 ├── server/
 │   ├── .env.example                # all config, documented
 │   ├── atlas/chunk_vector_index.json   # index JSON for the Atlas UI
@@ -269,8 +307,8 @@ DocuMind AI/
 │   │   ├── logger.js               # pino
 │   │   ├── db.js                   # MongoClient singleton + collections
 │   │   ├── errors.js, ids.js       # HttpError, strict id parsing
-│   │   ├── middleware/             # owner.js (identity), errors.js, rateLimits.js
-│   │   ├── routes/                 # health, meta, documents, ask (SSE)
+│   │   ├── middleware/             # owner.js (identity), access.js (access code), errors.js, rateLimits.js
+│   │   ├── routes/                 # health, meta, access, documents, ask (SSE)
 │   │   └── services/               # pdf, chunker, openai (embed, route, stream), ingest, retrieve, prompt, budget
 │   └── test/                       # unit + HTTP tests, helpers/makePdf.js, fixtures/handbook.js (+ eval set)
 └── client/                         # Vite + React

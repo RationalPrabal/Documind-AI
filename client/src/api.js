@@ -35,6 +35,8 @@ async function request(path, init) {
 }
 
 export const getMeta = () => request('/api/meta')
+export const submitAccessCode = (code) =>
+  request('/api/access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
 export const listDocuments = () => request('/api/documents').then((r) => r.documents)
 export const deleteDocument = (id) => request(`/api/documents/${id}`, { method: 'DELETE' })
 
